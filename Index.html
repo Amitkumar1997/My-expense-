@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Allied Expenses 2026</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#14171f;--mute:#6b7280;--line:#e5e7eb;--acc:#4f46e5;--acc2:#c7d2fe;--up:#dc2626;--down:#16a34a}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1015;--card:#171a22;--ink:#eef0f5;--mute:#8b93a5;--line:#262b36;--acc:#818cf8;--acc2:#312e81;--up:#f87171;--down:#4ade80}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 -apple-system,system-ui,Segoe UI,Roboto,sans-serif;padding:max(14px,env(safe-area-inset-top)) 14px 40px}
+.wrap{max-width:760px;margin:0 auto}
+h1{font-size:20px;margin:4px 0 2px}
+.sub{color:var(--mute);font-size:13px;margin-bottom:12px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:7px 12px;cursor:pointer}
+.btn.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;cursor:pointer;text-align:left}
+.card.sel{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc2)}
+.card .l{font-size:12px;color:var(--mute)}
+.card .v{font-size:18px;font-weight:700;margin:2px 0}
+.card .d{font-size:11px}
+.up{color:var(--up)}.down{color:var(--down)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0}
+.panel h2{font-size:14px;margin:0 0 8px;display:flex;justify-content:space-between;align-items:center}
+.tabs{display:flex;gap:6px}
+.tabs button{padding:5px 10px;font-size:13px}
+.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+svg{width:100%;height:auto;display:block}
+.bar{cursor:pointer}
+.brow{display:grid;grid-template-columns:90px 1fr auto;gap:8px;align-items:center;padding:5px 4px;border-radius:8px;cursor:pointer;font-size:13px}
+.brow.sel{background:var(--acc2)}
+.brow .t{height:8px;background:var(--line);border-radius:6px;overflow:hidden}
+.brow .t i{display:block;height:100%;background:var(--acc);border-radius:6px}
+.brow .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.chip{background:var(--acc2);color:var(--ink);border-radius:20px;padding:3px 10px;font-size:12px;cursor:pointer}
+.tx{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.tx:first-child{border-top:0}
+.tx .a{font-weight:600;white-space:nowrap}
+.tx .m{color:var(--mute);font-size:12px}
+.empty{text-align:center;padding:30px 10px;color:var(--mute)}
+.note{font-size:12px;color:var(--mute);margin-top:6px}
+input[type=file]{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>Allied Expenses 2026</h1><div class="sub" id="sub">Load your CSV to begin</div></div>
+    <label class="btn pri" for="f">Load CSV</label><input id="f" type="file" accept=".csv,text/csv,text/plain,.txt">
+  </div>
+  <div id="app"></div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const INR=n=>'₹'+Math.round(n).toLocaleString('en-IN');
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const MON=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+const MONN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+let rows=[],state={view:'daily',mode:null,bank:null,range:null};
+
+/* ---------- CSV parsing ---------- */
+function parseCSV(text){
+  text=text.replace(/^\uFEFF/,'');
+  const first=text.split(/\r?\n/)[0]||'';
+  const delim=[',',';','\t'].map(d=>[d,first.split(d).length]).sort((a,b)=>b[1]-a[1])[0][0];
+  const out=[];let row=[],cur='',q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){ if(c=='"'){ if(text[i+1]=='"'){cur+='"';i++} else q=false } else cur+=c }
+    else if(c=='"') q=true;
+    else if(c==delim){row.push(cur);cur=''}
+    else if(c=='\n'||c=='\r'){ if(c=='\r'&&text[i+1]=='\n')i++; row.push(cur);cur='';if(row.some(x=>x.trim()))out.push(row);row=[] }
+    else cur+=c;
+  }
+  row.push(cur); if(row.some(x=>x.trim()))out.push(row);
+  return out;
+}
+function parseDate(s){
+  s=String(s).trim().replace(/[T ]\d{1,2}:\d{2}.*$/,'');
+  let m,y,mo,d;
+  if(m=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/)){y=+m[1];mo=+m[2]-1;d=+m[3]}
+  else if(m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/)){d=+m[1];mo=+m[2]-1;y=+m[3];if(y<100)y+=2000;if(mo>11){[d,mo]=[mo+1,d-1]}}
+  else if(m=s.match(/^(\d{1,2})[ \-,]*([A-Za-z]{3,})[ \-,]*(\d{2,4})$/)){d=+m[1];mo=MON.indexOf(m[2].slice(0,3).toLowerCase());y=+m[3];if(y<100)y+=2000}
+  else if(m=s.match(/^([A-Za-z]{3,})[ \-,]*(\d{1,2})[ \-,]*(\d{4})$/)){d=+m[2];mo=MON.indexOf(m[1].slice(0,3).toLowerCase());y=+m[3]}
+  else return null;
+  if(mo<0||mo>11||d<1||d>31)return null;
+  return new Date(y,mo,d);
+}
+const AMT_RE=/^[\s₹$]*(?:rs\.?|inr)?\s*-?\(?[\d,]+(?:\.\d+)?\)?\s*(?:dr|cr)?$/i;
+function parseAmt(s){
+  const t=String(s).replace(/[^0-9.\-()]/g,'');
+  let n=parseFloat(t.replace(/[()]/g,''));
+  return isNaN(n)?null:Math.abs(n);
+}
+function amtFromText(s){
+  const m=String(s).match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)/i)||String(s).match(/\b([\d,]*\d(?:\.\d{1,2})?)\s*(?:rs|inr|rupees)\b/i);
+  return m?parseFloat(m[1].replace(/,/g,'')):null;
+}
+const BANKS=[['HDFC',/hdfc/i],['ICICI',/icici/i],['SBI',/\bsbi\b|state bank/i],['Axis',/\baxis\b/i],['Kotak',/kotak/i],['IDFC First',/idfc/i],['Yes Bank',/yes\s*bank/i],['PNB',/\bpnb\b|punjab national/i],['Bank of Baroda',/\bbob\b|baroda/i],['Canara',/canara/i],['Union Bank',/union\s*bank/i],['IndusInd',/indusind/i],['RBL',/\brbl\b/i],['AU Small Finance',/\bau\s*(small|bank)/i],['Federal',/federal/i],['IDBI',/idbi/i],['Citi',/\bciti/i],['HSBC',/hsbc/i],['Standard Chartered',/standard chartered|\bsc\b/i],['AmEx',/amex|american express/i],['Paytm Bank',/paytm\s*payments?\s*bank/i],['Bandhan',/bandhan/i],['Indian Bank',/indian bank/i],['Bank of India',/bank of india|\bboi\b/i]];
+function findBank(s){
+  for(const [n,re] of BANKS) if(re.test(s)) return n;
+  const m=s.match(/\b([A-Z][A-Za-z&]{2,})\s+Bank\b/);
+  return m?m[1]+' Bank':'Unknown';
+}
+function build(text){
+  const t=parseCSV(text); if(!t.length) return [];
+  const nc=Math.max(...t.slice(0,20).map(r=>r.length));
+  const hdr=!t[0].some(c=>parseDate(c));
+  const head=hdr?t[0].map(h=>h.trim().toLowerCase()):[];
+  const body=hdr?t.slice(1):t;
+  const sample=body.slice(0,200);
+  const score=(ci,fn)=>sample.length?sample.filter(r=>r[ci]!=null&&fn(r[ci])).length/sample.length:0;
+  const hint=(re)=>head.findIndex(h=>re.test(h));
+  let dc=hint(/date|day|time|when/); if(dc<0){let b=-1,bs=0.5;for(let i=0;i<nc;i++){const s=score(i,c=>parseDate(c));if(s>bs){bs=s;b=i}}dc=b}
+  let ac=hint(/amount|amt|expense|spent|price|debit|cost|value/);
+  if(ac<0||ac==dc){ac=-1;let bs=0.5;for(let i=0;i<nc;i++){if(i==dc)continue;const s=score(i,c=>AMT_RE.test(c.trim()));if(s>bs){bs=s;ac=i}}}
+  let mc=hint(/mode|method|payment|paid|type|via/); if(mc<0||mc==dc||mc==ac) mc=nc-1;
+  if(mc==dc||mc==ac) mc=-1;
+  let tc=hint(/text|desc|note|detail|narration|merchant|particular|message|sms|remark/);
+  if(tc<0||[dc,ac,mc].includes(tc)){tc=-1;for(let i=0;i<nc;i++) if(![dc,ac,mc].includes(i)){tc=i;break}}
+  const res=[];
+  for(const r of body){
+    const d=dc>=0?parseDate(r[dc]||''):null; if(!d) continue;
+    const text=tc>=0?(r[tc]||'').trim():'';
+    const mode=mc>=0?(r[mc]||'').trim():'';
+    let amt=ac>=0?parseAmt(r[ac]||''):null;
+    if(amt==null) amt=amtFromText(text+' '+mode);
+    if(amt==null) continue;
+    const all=r.join(' ');
+    res.push({d,amt,text:text||(ac>=0?'':mode),mode:mode?mode.replace(/\s+/g,' '):'Other',bank:findBank(all)});
+  }
+  // normalise mode case
+  const seen={};res.forEach(r=>{const k=r.mode.toLowerCase();if(!seen[k])seen[k]=r.mode;r.mode=seen[k]});
+  return res;
+}
+
+/* ---------- date helpers ---------- */
+const day0=d=>new Date(d.getFullYear(),d.getMonth(),d.getDate());
+const addD=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
+const weekStart=d=>addD(d,-((d.getDay()+6)%7));
+const fmtD=d=>d.getDate()+' '+MONN[d.getMonth()];
+function sumR(list,a,b){let t=0;for(const r of list)if(r.d>=a&&r.d<b)t+=r.amt;return t}
+
+/* ---------- render ---------- */
+function filtered(skip){return rows.filter(r=>(skip=='mode'||!state.mode||r.mode===state.mode)&&(skip=='bank'||!state.bank||r.bank===state.bank))}
+function inRange(list){const g=state.range;return g?list.filter(r=>r.d>=g.from&&r.d<g.to):list}
+
+function render(){
+  if(!rows.length){$('#app').innerHTML='<div class="empty">No expenses found.<br>Tap <b>Load CSV</b> and choose <i>Allied Expenses_2026.csv</i>.</div>';return}
+  const list=filtered(), T=day0(new Date());
+  const ws=weekStart(T), ms=new Date(T.getFullYear(),T.getMonth(),1);
+  const dow=Math.round((T-ws)/864e5)+1, dom=T.getDate();
+  const pms=new Date(T.getFullYear(),T.getMonth()-1,1);
+  const pmEnd=new Date(Math.min(addD(pms,dom).getTime(),ms.getTime()));
+  const P=[
+    {k:'today',l:'Today',from:T,to:addD(T,1),pf:addD(T,-1),pt:T,pl:'yesterday'},
+    {k:'week',l:'This week',from:ws,to:addD(ws,7),pf:addD(ws,-7),pt:addD(ws,-7+dow),pl:'last week'},
+    {k:'month',l:'This month',from:ms,to:new Date(T.getFullYear(),T.getMonth()+1,1),pf:pms,pt:pmEnd,pl:'last month'}
+  ];
+  let h='<div class="cards">';
+  for(const p of P){
+    const cur=sumR(list,p.from,p.to), prev=sumR(list,p.pf,p.pt);
+    const diff=prev?((cur-prev)/prev*100):null;
+    const sel=state.range&&state.range.k===p.k;
+    h+=`<button class="card ${sel?'sel':''}" data-card="${p.k}"><div class="l">${p.l}</div><div class="v">${INR(cur)}</div><div class="d ${diff==null?'':diff>0?'up':'down'}">${diff==null?'—':(diff>0?'▲ ':'▼ ')+Math.abs(diff).toFixed(0)+'% vs '+p.pl}</div></button>`;
+  }
+  h+='</div>';
+  // active filters
+  const chips=[];
+  if(state.mode)chips.push(['mode','Mode: '+state.mode]);
+  if(state.bank)chips.push(['bank','Bank: '+state.bank]);
+  if(state.range)chips.push(['range','Period: '+state.range.label]);
+  if(chips.length)h+='<div class="chips">'+chips.map(c=>`<span class="chip" data-clear="${c[0]}">${esc(c[1])} ✕</span>`).join('')+'</div>';
+
+  // trend
+  const B=buckets(T);
+  h+=`<div class="panel"><h2><span>Spending trend</span><span class="tabs">${['daily','weekly','monthly'].map(v=>`<button data-view="${v}" class="${state.view==v?'on':''}">${v[0].toUpperCase()+v.slice(1)}</button>`).join('')}</span></h2>${chart(B,list)}<div class="note">Tap a bar to see its transactions.</div></div>`;
+
+  // breakdowns
+  h+='<div class="panel"><h2>By payment mode</h2>'+breakdown(inRange(filtered('mode')),'mode')+'</div>';
+  h+='<div class="panel"><h2>By bank</h2>'+breakdown(inRange(filtered('bank')),'bank')+'</div>';
+
+  // list
+  let tx=inRange(list).slice().sort((a,b)=>b.d-a.d), total=tx.reduce((s,r)=>s+r.amt,0);
+  h+=`<div class="panel"><h2><span>Transactions${state.range?' · '+esc(state.range.label):''}</span><span>${INR(total)}</span></h2>`;
+  if(!tx.length)h+='<div class="empty">Nothing here.</div>';
+  tx.slice(0,100).forEach(r=>{h+=`<div class="tx"><div><div>${esc(r.text||r.mode)}</div><div class="m">${fmtD(r.d)} · ${esc(r.mode)}${r.bank!='Unknown'?' · '+esc(r.bank):''}</div></div><div class="a">${INR(r.amt)}</div></div>`});
+  if(tx.length>100)h+=`<div class="note">Showing latest 100 of ${tx.length}.</div>`;
+  h+='</div>';
+  $('#app').innerHTML=h;
+  bind(P,B);
+  window._P=P;window._B=B;
+}
+
+function buckets(T){
+  const out=[];
+  if(state.view=='daily'){for(let i=29;i>=0;i--){const a=addD(T,-i);out.push({label:String(a.getDate()),tip:fmtD(a),from:a,to:addD(a,1)})}}
+  else if(state.view=='weekly'){const w=weekStart(T);for(let i=11;i>=0;i--){const a=addD(w,-7*i);out.push({label:fmtD(a),tip:'Week of '+fmtD(a),from:a,to:addD(a,7)})}}
+  else{for(let i=11;i>=0;i--){const a=new Date(T.getFullYear(),T.getMonth()-i,1);out.push({label:MONN[a.getMonth()],tip:MONN[a.getMonth()]+' '+a.getFullYear(),from:a,to:new Date(a.getFullYear(),a.getMonth()+1,1)})}}
+  return out;
+}
+function chart(B,list){
+  B.forEach(b=>b.v=sumR(list,b.from,b.to));
+  const W=360,H=200,l=6,r=6,t=22,bt=26,n=B.length;
+  const max=Math.max(1,...B.map(b=>b.v)), avg=B.reduce((s,b)=>s+b.v,0)/n;
+  const bw=(W-l-r)/n, y=v=>t+(H-t-bt)*(1-v/max);
+  const step=n>20?5:n>10?2:1;
+  let s=`<svg viewBox="0 0 ${W} ${H}">`;
+  s+=`<text x="${l}" y="12" font-size="10" fill="var(--mute)">Peak ${INR(max)} · Avg ${INR(avg)}</text>`;
+  B.forEach((b,i)=>{
+    const x=l+i*bw+bw*.15, w=bw*.7, yy=y(b.v), sel=state.range&&state.range.from.getTime()==b.from.getTime()&&state.range.to.getTime()==b.to.getTime();
+    s+=`<rect class="bar" data-i="${i}" x="${x}" y="${yy}" width="${w}" height="${Math.max(0,H-bt-yy)}" rx="3" fill="${sel?'var(--acc)':'var(--acc2)'}"/>`;
+    s+=`<rect class="bar" data-i="${i}" x="${l+i*bw}" y="${t}" width="${bw}" height="${H-t-bt}" fill="transparent"/>`;
+    if((n-1-i)%step==0)s+=`<text x="${l+i*bw+bw/2}" y="${H-10}" font-size="9" text-anchor="middle" fill="var(--mute)">${esc(b.label)}</text>`;
+  });
+  const pts=B.map((b,i)=>`${l+i*bw+bw/2},${y(b.v)}`).join(' ');
+  s+=`<line x1="${l}" x2="${W-r}" y1="${y(avg)}" y2="${y(avg)}" stroke="var(--mute)" stroke-dasharray="3 3" stroke-width=".8"/>`;
+  s+=`<polyline points="${pts}" fill="none" stroke="var(--acc)" stroke-width="1.8" stroke-linejoin="round" pointer-events="none"/>`;
+  B.forEach((b,i)=>{if(b.v>0)s+=`<circle cx="${l+i*bw+bw/2}" cy="${y(b.v)}" r="2.2" fill="var(--acc)" pointer-events="none"/>`});
+  return s+'</svg>';
+}
+function breakdown(list,key){
+  const m={};list.forEach(r=>m[r[key]]=(m[r[key]]||0)+r.amt);
+  const e=Object.entries(m).sort((a,b)=>b[1]-a[1]);
+  if(!e.length)return '<div class="empty">No data</div>';
+  const tot=e.reduce((s,x)=>s+x[1],0),mx=e[0][1];
+  return e.map(([k,v])=>`<div class="brow ${state[key]===k?'sel':''}" data-${key}="${esc(k)}"><span class="n">${esc(k)}</span><span class="t"><i style="width:${v/mx*100}%"></i></span><span>${INR(v)} · ${(v/tot*100).toFixed(0)}%</span></div>`).join('');
+}
+function bind(P,B){
+  document.querySelectorAll('[data-card]').forEach(el=>el.onclick=()=>{
+    const p=P.find(x=>x.k==el.dataset.card);
+    state.range=(state.range&&state.range.k==p.k)?null:{k:p.k,from:p.from,to:p.to,label:p.l};render()});
+  document.querySelectorAll('[data-view]').forEach(el=>el.onclick=()=>{state.view=el.dataset.view;state.range=null;render()});
+  document.querySelectorAll('.bar').forEach(el=>el.onclick=()=>{
+    const b=B[+el.dataset.i],same=state.range&&state.range.from.getTime()==b.from.getTime()&&state.range.to.getTime()==b.to.getTime();
+    state.range=same?null:{k:'bar',from:b.from,to:b.to,label:b.tip};render()});
+  document.querySelectorAll('[data-mode]').forEach(el=>el.onclick=()=>{state.mode=state.mode===el.dataset.mode?null:el.dataset.mode;render()});
+  document.querySelectorAll('[data-bank]').forEach(el=>el.onclick=()=>{state.bank=state.bank===el.dataset.bank?null:el.dataset.bank;render()});
+  document.querySelectorAll('[data-clear]').forEach(el=>el.onclick=()=>{state[el.dataset.clear]=null;render()});
+}
+
+/* ---------- loading ---------- */
+function load(text,save){
+  rows=build(text);
+  state.mode=state.bank=state.range=null;
+  if(save){try{localStorage.setItem('allied_csv',text)}catch(e){}}
+  $('#sub').textContent=rows.length?`${rows.length} transactions · updated ${new Date().toLocaleString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`:'Could not read any rows — check the file';
+  render();
+}
+$('#f').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();r.onload=()=>load(r.result,true);r.readAsText(f);e.target.value='';
+});
+let saved=null;try{saved=localStorage.getItem('allied_csv')}catch(e){}
+if(saved)load(saved,false);else render();
+</script>
+</body>
+</html>
